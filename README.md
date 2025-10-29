@@ -20,3 +20,10 @@
 - `FORMULAS.md` — TeX-ready reference of the identities encoded in the implementation.
 - `TEST_SUMMARY.md` — Execution report for the automated test suite.
 - `reference_paper/` — Original arXiv source (ignored by version control per requirements).
+
+# Future Extensions
+- Implement the combinatorial coefficient expansions from Lemmas 2.6 and 2.7 (generalized Hoggatt formulas) to generate closed forms without invoking recurrences.
+- Automate orthogonality verification by numerically integrating the weights in Proposition 3.4 and Corollary 3.5, including diagnostics for parity-induced cancellations.
+- Expose constructors for the stochastic matrices and birth–death generators in Section 4, along with stationary measure and ergodicity checks derived from the potential coefficients $\pi_n$.
+- Provide Karlin–McGregor integral evaluators for discrete and continuous time, enabling explicit transition probability estimates via the orthogonal polynomial and weight data.
+- Explore duality mappings between Markov processes and GFP families as highlighted in the concluding discussion, packaging reusable duality function builders.
