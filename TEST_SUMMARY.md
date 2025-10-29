@@ -5,4 +5,6 @@
 - **Parity symmetry**: Detected the expected parity relationship $\mathcal{L}_n(-x)=(-1)^{n+1}\mathcal{L}_n(x)$ for the Chebyshev-first-kind family.
 - **Random-walk coefficients**: Checked that the discrete-time coefficients $(p_n,q_n,r_n)$ equal $1/3$ for the affine Lucas-type example $d(x)=3x-1$, $g(x)=-1$.
 - **Orthogonality weight detection**: Ensured the toolkit extracts the corollary weight $\omega(x)=\sqrt{k-d(x)^2}$ when $d(x)=3x+1$ and $g(x)=-2$ (affine case with $k=8$).
-- **Result**: All 5 automated tests passed (exit code 0).
+- **Hoggatt expansion (Fibonacci)**: Confirmed that the closed-form sum reproduces $\mathcal{F}_n(x)$ for $n\leq 8$ when $d(x)=x$, $g(x)=1$.
+- **Hoggatt expansion (Lucas)**: Confirmed that the closed-form sum reproduces $\mathcal{L}_n(x)$ for $n\leq 8$ when $d(x)=2x$, $g(x)=-1$.
+- **Result**: All 7 automated tests passed (exit code 0).

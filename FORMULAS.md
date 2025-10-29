@@ -12,6 +12,14 @@
   where $a(x)=\dfrac{d(x)+\sqrt{d(x)^2+4 g(x)}}{2}$ and $b(x)=\dfrac{d(x)-\sqrt{d(x)^2+4 g(x)}}{2}$.
 - **Algebraic relations between characteristic roots**:
   $a(x)+b(x)=d(x)$, $a(x)\,b(x)=-g(x)$, and $a(x)-b(x)=\sqrt{d(x)^2+4 g(x)}$.
+- **Generalized Hoggatt expansions** (Lemmas 2.6–2.7):
+  $$
+  \mathcal{F}_n(x)=\sum_{i=0}^{\lfloor (n-1)/2\rfloor} \binom{n-i-1}{i}\,d(x)^{\,n-2i-1}\,g(x)^{\,i}, \qquad n\ge 1,
+  $$
+  $$
+  \mathcal{L}_n(x)=\frac{1}{\alpha} \sum_{i=0}^{\lfloor n/2\rfloor} \frac{n}{n-i}\binom{n-i}{i}\,d(x)^{\,n-2i}\,g(x)^{\,i}, \qquad n\ge 1,
+  $$
+  with $\mathcal{F}_0(x)=0$ and $\mathcal{L}_0(x)=p_0$.
 - **Parity lemma** (Lemma 2.3 of the paper): if $d(x)$ is odd and $g(x)$ is even, then $\mathcal{F}_n(-x)=(-1)^{n+1}\mathcal{F}_n(x)$ and likewise $\mathcal{L}_n(-x)=(-1)^{n+1}\mathcal{L}_n(x)$.
 - **Chebyshev-type orthogonality weight** (Proposition 3.4): when $g(x)$ is a nonzero constant and $h(x)=d(x)/\sqrt{-4 g(x)}$ maps the integration interval into $[-1,1]$, 
   $$

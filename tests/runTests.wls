@@ -54,6 +54,29 @@ Module[{var, family, data},
   check["Corollary weight detected for affine d(x)", AssociationQ[data] && KeyExistsQ[data, "WeightFunction"]];
   ];
 
+(* Binomial expansion equals recurrence (Fibonacci type) *)
+Module[{var, family, ok},
+  var = Symbol["\[FormalX]"];
+  family = CreateGFPFamily[var, 1, Variable -> var];
+  ok = And @@ Table[
+      Simplify[GFPPolynomial[family, n] - GFPBinomialExpansion[family, n]] === 0,
+      {n, 1, 8}
+      ];
+  check["Hoggatt expansion reproduces Fibonacci-type polynomials", ok];
+  ];
+
+(* Binomial expansion equals recurrence (Lucas type) *)
+Module[{var, family, ok},
+  var = Symbol["\[FormalX]"];
+  family = CreateGFPFamily[2 var, -1,
+    Type -> "Lucas", LucasP0 -> 1, LucasP1 -> var, Variable -> var];
+  ok = And @@ Table[
+      Simplify[GFPPolynomial[family, n] - GFPBinomialExpansion[family, n]] === 0,
+      {n, 0, 8}
+      ];
+  check["Hoggatt expansion reproduces Lucas-type polynomials", ok];
+  ];
+
 passed = Count[results, _?(TrueQ[#["Pass"]] &)];
 failed = Length[results] - passed;
 summary = <|"Total" -> Length[results], "Passed" -> passed, "Failed" -> failed|>;

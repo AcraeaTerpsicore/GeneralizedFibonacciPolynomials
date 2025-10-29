@@ -22,6 +22,9 @@ GFPOrthogonalityData::usage =
 GFPRandomWalkData::usage =
   "GFPRandomWalkData[family] tries to match the discrete- and continuous-time random walk parameters discussed in the reference paper when d(x)=c x + h.";
 
+GFPBinomialExpansion::usage =
+  "GFPBinomialExpansion[family, n] evaluates the generalized Hoggatt coefficient expansion (Lemma 2.6/2.7) for the nth polynomial without using recurrence.";
+
 Options[CreateGFPFamily] = {
    Type -> "Fibonacci",
    LucasP0 -> 2,
@@ -333,6 +336,47 @@ GFPRandomWalkData[family_Association] := Module[
     "ContinuousTime" -> continuous
     |>
    ];
+
+GFPBinomialExpansion[family_Association, n_Integer?NonNegative] := Module[
+   {
+    type = family["Type"],
+    dExpr = family["dExpression"],
+    gExpr = family["gExpression"],
+    alpha = Lookup[family, "Alpha", None],
+    init0 = family["Initial0"],
+    result
+    },
+   result = Which[
+     type === "Fibonacci",
+     Which[
+      n == 0, 0,
+      n >= 1,
+      Sum[
+        Binomial[n - i - 1, i]*
+         dExpr^(n - 2 i - 1)*
+         gExpr^i,
+        {i, 0, Floor[(n - 1)/2]}
+        ]
+      ],
+     type === "Lucas",
+     Which[
+      n == 0, init0,
+      n >= 1,
+      Sum[
+        (n/(n - i))*Binomial[n - i, i]*
+         dExpr^(n - 2 i)*
+         gExpr^i,
+        {i, 0, Floor[n/2]}
+        ]/alpha
+      ],
+     True,
+     Message[GFPBinomialExpansion::badtype, type];
+     Return[$Failed]
+     ];
+   Simplify[result]
+   ];
+
+GFPBinomialExpansion::badtype = "Unknown family type `1`. Expected \"Fibonacci\" or \"Lucas\".";
 
 End[];
 
