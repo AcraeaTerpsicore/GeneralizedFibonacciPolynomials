@@ -11,4 +11,6 @@
 - **Random-walk diagnostics (continuous)**: Confirmed generator row sums vanish and ergodicity holds for $d(x)=-2x+1$, $g(x)=-2$.
 - **Chebyshev quadrature**: Numerically integrated $U_n$/$T_n$ products against $1/\sqrt{1-x^2}$ on $[-1,1]$ and confirmed off-diagonal entries vanish while parity-predicted zeros hold.
 - **Affine quadrature**: Checked that the $d(x)=3x+1$, $g(x)=-2$ family yields zero off-diagonal moments under the corollary weight on the asymmetric interval.
-- **Result**: All 11 automated tests passed (exit code 0).
+- **Karlin–McGregor (discrete)**: Verified the integral formula yields identity transitions at zero steps and positive off-diagonal probabilities for one step.
+- **Karlin–McGregor (error handling)**: Confirmed that invalid specifications surface a controlled failure.
+- **Result**: All 13 automated tests passed (exit code 0).

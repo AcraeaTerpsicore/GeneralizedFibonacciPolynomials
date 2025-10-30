@@ -59,6 +59,13 @@ Options[GFPRandomWalkModel] = {
    Assumptions -> True
    };
 
+Options[GFPKarlinMcGregor] = {
+   "Weight" -> Automatic,
+   "IntegrationOptions" -> {},
+   WorkingPrecision -> Automatic,
+   Assumptions -> True
+   };
+
 Begin["`Private`"];
 
 clearContextSymbol[sym_Symbol] := (ClearAll[sym]; Clear[sym]);
@@ -495,6 +502,72 @@ GFPRandomWalkModel::badtype = "Unknown model type `1`. Use \"Discrete\" or \"Con
 GFPRandomWalkModel::nodata = "No random walk data available for model type `1`.";
 GFPRandomWalkModel::baddim = "Dimension must be an integer greater than 1. Received `1`.";
 
+resolveWeightData[family_Association, weightOption_, var_, assumptions_, wpNumeric_] := Module[
+   {
+    orthData = GFPOrthogonalityData[family],
+    corData, weightCheb,
+    weightExprLocal, intervalLocal, source,
+    dExpr = family["dExpression"],
+    gExpr = family["gExpression"],
+    constG, scale, sols, rootVals, wpSolver
+    },
+   Which[
+    weightOption =!= Automatic,
+    Which[
+     AssociationQ[weightOption] && KeyExistsQ[weightOption, "Weight"] && KeyExistsQ[weightOption, "Interval"],
+     weightExprLocal = weightOption["Weight"];
+     intervalLocal = weightOption["Interval"];
+     source = "Provided";
+     ,
+     MatchQ[weightOption, {_, {_, _}}],
+     weightExprLocal = First[weightOption];
+     intervalLocal = weightOption[[2]];
+     source = "Provided";
+     ,
+     True,
+     Return[Failure["WeightResolution", <|"Reason" -> "BadWeightOption", "Detail" -> weightOption|>]]
+     ],
+    AssociationQ[corData = orthData["CorollaryWeight"]] && corData =!= <||>,
+    weightExprLocal = corData["WeightFunction"];
+    intervalLocal = corData["Interval"];
+    source = "Corollary";
+    ,
+    True,
+    weightCheb = orthData["ChebyshevMappingWeight"];
+    If[weightCheb === None,
+     Return[Failure["WeightResolution", <|"Reason" -> "MissingData"|>]]
+     ];
+    constG = Simplify[gExpr, Assumptions -> assumptions];
+    If[constG === 0 || ! FreeQ[constG, var],
+     Return[Failure["WeightResolution", <|"Reason" -> "MissingData"|>]]
+     ];
+    scale = Simplify[Sqrt[-4 constG], Assumptions -> assumptions];
+    wpSolver = Max[wpNumeric, 40];
+    sols = Quiet@Join[
+       NSolve[dExpr == scale, var, WorkingPrecision -> wpSolver],
+       NSolve[dExpr == -scale, var, WorkingPrecision -> wpSolver]
+       ];
+    rootVals = Select[
+      Chop[Re[var /. sols], 10^(-wpNumeric/2)],
+      NumericQ[#] &
+      ];
+    If[Length[rootVals] < 2,
+     Return[Failure["WeightResolution", <|"Reason" -> "MissingData"|>]]
+     ];
+    intervalLocal = {Min[rootVals], Max[rootVals]};
+    weightExprLocal = weightCheb;
+    source = "Chebyshev"
+    ];
+   If[! (ListQ[intervalLocal] && Length[intervalLocal] == 2),
+    Return[Failure["WeightResolution", <|"Reason" -> "BadInterval", "Detail" -> intervalLocal|>]]
+    ];
+   <|
+    "Weight" -> Simplify[weightExprLocal, Assumptions -> assumptions],
+    "Interval" -> Simplify[intervalLocal, Assumptions -> assumptions],
+    "Source" -> source
+    |>
+   ];
+
 GFPOrthogonalityCheck[family_Association, nmax_Integer?NonNegative, opts : OptionsPattern[]] := Module[
    {
     type = family["Type"],
@@ -504,10 +577,10 @@ GFPOrthogonalityCheck[family_Association, nmax_Integer?NonNegative, opts : Optio
     wpNumeric,
     tol = OptionValue["Tolerance"],
     integrationOpts = OptionValue["IntegrationOptions"],
-    orthData = GFPOrthogonalityData[family],
     weightOption = OptionValue["Weight"],
     pairsOption = OptionValue["Pairs"],
-    weightInfo, weightExpr, interval, aNum, bNum,
+    orthData,
+    weightInfo, weightExpr, intervalSym, aNum, bNum,
     pairs, results, matrix, offDiagVals, failedPairs, maxOffDiag,
     parityApplicable, parityPairs, parityConfirmed, parityMismatches,
     toNumeric, buildPairs, applyWeight, integratePair, optsList, weightSource
@@ -538,85 +611,27 @@ GFPOrthogonalityCheck[family_Association, nmax_Integer?NonNegative, opts : Optio
      Assumptions -> assumptions
      ];
    
-   weightInfo = Module[
-     {
-      source = None,
-      weightExprLocal = None,
-      intervalLocal = None,
-      corData, weightCheb, dExpr, gExpr, constG, scale,
-      sols, rootVals
-      },
-     
-     Which[
-      weightOption =!= Automatic,
-      Which[
-       MatchQ[weightOption, {_, {_, _}}],
-       {weightExprLocal, intervalLocal} = weightOption;
-       source = "Provided",
-       AssociationQ[weightOption] && KeyExistsQ[weightOption, "Weight"] && KeyExistsQ[weightOption, "Interval"],
-       weightExprLocal = weightOption["Weight"];
-       intervalLocal = weightOption["Interval"];
-       source = "Provided",
-       True,
-       Message[GFPOrthogonalityCheck::badweightopt, weightOption];
-       Return[$Failed]
-       ],
-      
-      (corData = orthData["CorollaryWeight"]; AssociationQ[corData] && corData =!= <||>),
-      weightExprLocal = corData["WeightFunction"];
-      intervalLocal = corData["Interval"];
-      source = "Corollary",
-      
-      True,
-      weightCheb = orthData["ChebyshevMappingWeight"];
-      If[weightCheb === None,
-       Message[GFPOrthogonalityCheck::noweight];
-       Return[$Failed];
-       ];
-      weightExprLocal = weightCheb;
-      source = "Chebyshev";
-      dExpr = family["dExpression"];
-      gExpr = family["gExpression"];
-      constG = Simplify[gExpr, Assumptions -> assumptions];
-      scale = Simplify[Sqrt[-4 constG], Assumptions -> assumptions];
-      sols = Join[
-        Quiet@NSolve[dExpr == scale, var, WorkingPrecision -> wp],
-        Quiet@NSolve[dExpr == -scale, var, WorkingPrecision -> wp]
-        ];
-      rootVals = DeleteDuplicates[
-        Module[{vals = var /. sols},
-         vals = N[vals, wp];
-         vals = Select[vals, NumericQ[#] && Abs[Im[#]] <= 10^(-wp/2) &];
-         Chop[Re[vals], 10^(-wp/2)]
-         ]
-        ];
-      rootVals = Select[rootVals, NumberQ[#] &];
-      If[Length[rootVals] < 2,
-       Message[GFPOrthogonalityCheck::nointerval];
-       Return[$Failed];
-       ];
-      intervalLocal = {Min[rootVals], Max[rootVals]}
-      ];
-     
-     If[! ListQ[intervalLocal] || Length[intervalLocal] != 2,
-      Message[GFPOrthogonalityCheck::badinterval, intervalLocal];
-      Return[$Failed];
-      ];
-     
-     <|
-      "Weight" -> weightExprLocal,
-      "Interval" -> intervalLocal,
-      "Source" -> source
-      |>
+   orthData = GFPOrthogonalityData[family];
+   weightInfo = resolveWeightData[family, weightOption, var, assumptions, wpNumeric];
+   If[FailureQ[weightInfo],
+    Switch[Lookup[weightInfo, "Reason"],
+     "BadWeightOption", Message[GFPOrthogonalityCheck::badweightopt, Lookup[weightInfo, "Detail"]],
+     "MissingData", Message[GFPOrthogonalityCheck::noweight],
+     "BadInterval", Message[GFPOrthogonalityCheck::badinterval, Lookup[weightInfo, "Detail"]],
+     _, Message[GFPOrthogonalityCheck::noweight]
      ];
-   
-   If[weightInfo === $Failed, Return[$Failed]];
+    Return[$Failed];
+    ];
    weightSource = weightInfo["Source"];
    weightExpr = Simplify[weightInfo["Weight"], Assumptions -> assumptions];
-   interval = weightInfo["Interval"];
-   {aNum, bNum} = toNumeric /@ interval;
+   intervalSym = weightInfo["Interval"];
+   If[!(ListQ[intervalSym] && Length[intervalSym] == 2),
+    Message[GFPOrthogonalityCheck::badinterval, intervalSym];
+    Return[$Failed];
+    ];
+   {aNum, bNum} = toNumeric /@ intervalSym;
    If[AnyTrue[{aNum, bNum}, # === $Failed &],
-    Message[GFPOrthogonalityCheck::numericinterval, interval];
+    Message[GFPOrthogonalityCheck::numericinterval, intervalSym];
     Return[$Failed];
     ];
    If[!(aNum < bNum),
@@ -747,6 +762,283 @@ GFPOrthogonalityCheck::nointerval = "Failed to determine suitable integration in
 GFPOrthogonalityCheck::badinterval = "Invalid integration interval specification `1`.";
 GFPOrthogonalityCheck::numericinterval = "Integration interval `1` could not be converted to numeric endpoints.";
 GFPOrthogonalityCheck::badpairs = "Pair specification `1` must be a list of integer index pairs.";
+
+parseKarlinSpec[spec_] := Module[{kind, data, n, t, i, j},
+   Which[
+    AssociationQ[spec],
+    kind = Lookup[spec, "Type", Missing["KeyAbsent", "Type"]];
+    If[! StringQ[kind], Return[Failure["KarlinSpec", <|"Reason" -> "BadType", "Detail" -> spec|>]]];
+    kind = ToLowerCase[kind];
+    Switch[kind,
+     "discrete",
+     n = Lookup[spec, "Steps", Missing["KeyAbsent", "Steps"]];
+     i = Lookup[spec, "From", Missing["KeyAbsent", "From"]];
+     j = Lookup[spec, "To", Missing["KeyAbsent", "To"]];
+     If[! (IntegerQ[n] && n >= 0 && IntegerQ[i] && i >= 0 && IntegerQ[j] && j >= 0),
+      Return[Failure["KarlinSpec", <|"Reason" -> "BadDiscrete", "Detail" -> spec|>]]
+      ];
+     {"Discrete", n, i, j},
+     "continuous",
+     t = Lookup[spec, "Time", Missing["KeyAbsent", "Time"]];
+     i = Lookup[spec, "From", Missing["KeyAbsent", "From"]];
+     j = Lookup[spec, "To", Missing["KeyAbsent", "To"]];
+     If[! (NumericQ[t] && t >= 0 && IntegerQ[i] && i >= 0 && IntegerQ[j] && j >= 0),
+      Return[Failure["KarlinSpec", <|"Reason" -> "BadContinuous", "Detail" -> spec|>]]
+      ];
+     {"Continuous", N[t], i, j},
+     _,
+     Return[Failure["KarlinSpec", <|"Reason" -> "BadType", "Detail" -> kind|>]]
+     ],
+    ListQ[spec] && Length[spec] >= 4,
+    kind = ToLowerCase[First[spec]];
+    data = Rest[spec];
+    Switch[kind,
+     "discrete",
+     {n, i, j} = Take[data, 3];
+     If[! (IntegerQ[n] && n >= 0 && IntegerQ[i] && i >= 0 && IntegerQ[j] && j >= 0),
+      Return[Failure["KarlinSpec", <|"Reason" -> "BadDiscrete", "Detail" -> spec|>]]
+      ];
+     {"Discrete", n, i, j},
+     "continuous",
+     {t, i, j} = Take[data, 3];
+     If[! (NumericQ[t] && t >= 0 && IntegerQ[i] && i >= 0 && IntegerQ[j] && j >= 0),
+      Return[Failure["KarlinSpec", <|"Reason" -> "BadContinuous", "Detail" -> spec|>]]
+      ];
+     {"Continuous", N[t], i, j},
+     _, Return[Failure["KarlinSpec", <|"Reason" -> "BadType", "Detail" -> spec|>]]
+     ],
+    True,
+    Failure["KarlinSpec", <|"Reason" -> "BadSpecification", "Detail" -> spec|>]
+    ]
+   ];
+
+GFPKarlinMcGregor::badspec = "Invalid Karlin–McGregor specification `1`.";
+GFPKarlinMcGregor::badtype = "Unknown Karlin–McGregor type `1`. Use \"Discrete\" or \"Continuous\".";
+GFPKarlinMcGregor::baddiscrete = "Discrete specification `1` must provide nonnegative integer steps and indices.";
+GFPKarlinMcGregor::badcontinuous = "Continuous specification `1` must provide nonnegative time and integer indices.";
+GFPKarlinMcGregor::nodata = "No random walk data available for the `1` case.";
+GFPKarlinMcGregor::badinterval = "Invalid integration interval `1`.";
+GFPKarlinMcGregor::numericinterval = "Integration interval `1` could not be converted to numeric endpoints.";
+GFPKarlinMcGregor::zeroratio = "Transition parameters lead to undefined potential coefficient ratio.";
+GFPKarlinMcGregor::integral = "Unable to evaluate the Karlin–McGregor integral for the requested specification.";
+GFPKarlinMcGregor::noweight = "No orthogonality weight available; provide one via the \"Weight\" option.";
+GFPKarlinMcGregor::norm = "Unable to compute orthogonality norms for indices (`1`, `2`).";
+
+GFPKarlinMcGregor[family_Association, spec_, opts : OptionsPattern[]] := Module[
+   {
+    parsed = parseKarlinSpec[spec], kind, nSteps = 0, time = 0., i, j,
+    assumptions = OptionValue[Assumptions],
+    weightOption = OptionValue["Weight"],
+    integrationOpts = OptionValue["IntegrationOptions"],
+    wpOption = OptionValue[WorkingPrecision],
+    wp, wpNumeric, maxPrec, chopTol,
+    toNumeric, weightInfo, intervalSym, aNum, bNum, weightExpr, weightSource,
+    params = GFPRandomWalkData[family],
+    var = family["Variable"],
+    polyI, polyJ, weightAdjusted,
+    discreteData, continuousData, ratio, maxIndex, piList, prefactorSymbolic, prefactorNumeric,
+    integrandExpr, integrandFun, optsList, xx, integralValue, symbolic, specAssoc
+    },
+  If[FailureQ[parsed],
+   Module[{data = parsed[[2]], reason, detail},
+    reason = Lookup[data, "Reason", "Unknown"];
+    detail = Lookup[data, "Detail", spec];
+    Switch[reason,
+     "BadType", Message[GFPKarlinMcGregor::badtype, detail],
+     "BadDiscrete", Message[GFPKarlinMcGregor::baddiscrete, detail],
+     "BadContinuous", Message[GFPKarlinMcGregor::badcontinuous, detail],
+     _, Message[GFPKarlinMcGregor::badspec, spec]
+     ];
+    Return[$Failed]
+    ]
+   ];
+   Switch[First[parsed],
+    "Discrete",
+    kind = "Discrete";
+    nSteps = parsed[[2]];
+    i = parsed[[3]];
+    j = parsed[[4]];
+    ,
+    "Continuous",
+    kind = "Continuous";
+    time = parsed[[2]];
+    i = parsed[[3]];
+    j = parsed[[4]];
+    ,
+    _,
+    Message[GFPKarlinMcGregor::badtype, First[parsed]];
+    Return[$Failed]
+    ];
+   wp = If[wpOption === Automatic, MachinePrecision, wpOption];
+   wpNumeric = If[NumberQ[wp], wp, 16];
+   maxPrec = Max[16, wpNumeric /. MachinePrecision -> 16];
+   chopTol = 10^(-maxPrec/2);
+   toNumeric[x_] := Module[{num = If[wp === MachinePrecision, N[x], N[x, maxPrec]], imag},
+     If[NumericQ[num],
+      imag = If[Head[num] === Complex, Im[num], 0];
+      If[NumericQ[imag] && Abs[imag] <= chopTol,
+       Chop[Re[num], chopTol],
+       $Failed
+       ],
+      $Failed
+      ]
+     ];
+   weightInfo = resolveWeightData[family, weightOption, var, assumptions, wpNumeric];
+   If[FailureQ[weightInfo],
+    Switch[Lookup[weightInfo, "Reason"],
+     "BadWeightOption", Message[GFPKarlinMcGregor::badspec, Lookup[weightInfo, "Detail"]],
+     "MissingData", Message[GFPKarlinMcGregor::noweight],
+     "BadInterval", Message[GFPKarlinMcGregor::badinterval, Lookup[weightInfo, "Detail"]],
+     _, Message[GFPKarlinMcGregor::noweight]
+     ];
+    Return[$Failed]
+    ];
+   weightSource = weightInfo["Source"];
+   weightExpr = Simplify[weightInfo["Weight"], Assumptions -> assumptions];
+   intervalSym = weightInfo["Interval"];
+   If[!(ListQ[intervalSym] && Length[intervalSym] == 2),
+    Message[GFPKarlinMcGregor::badinterval, intervalSym];
+    Return[$Failed]
+    ];
+   {aNum, bNum} = toNumeric /@ intervalSym;
+   If[AnyTrue[{aNum, bNum}, # === $Failed &],
+    Message[GFPKarlinMcGregor::numericinterval, intervalSym];
+    Return[$Failed]
+    ];
+   If[!(aNum < bNum), {aNum, bNum} = {bNum, aNum}];
+   polyI = GFPPolynomial[family, i];
+   polyJ = GFPPolynomial[family, j];
+  weightAdjusted = Simplify[If[family["Type"] === "Lucas", 1/weightExpr, weightExpr], Assumptions -> assumptions];
+  optsList = Flatten[{integrationOpts}];
+  optsList = Select[optsList, # =!= Null &];
+  If[wp =!= MachinePrecision && ! AnyTrue[optsList, MatchQ[#, WorkingPrecision -> _] &],
+   AppendTo[optsList, WorkingPrecision -> maxPrec]
+   ];
+  If[! AnyTrue[optsList, MatchQ[#, Exclusions -> _] &],
+   AppendTo[optsList, Exclusions -> {xx == aNum, xx == bNum}]
+   ];
+  If[! AnyTrue[optsList, MatchQ[#, Method -> _] &],
+   AppendTo[optsList, Method -> "DoubleExponential"]
+   ];
+  xx = Unique["kmVar"];
+  optsList = DeleteDuplicates[optsList];
+  measureValue = Quiet@Integrate[weightAdjusted, {var, aNum, bNum},
+      Assumptions -> (assumptions && Element[var, Reals] && aNum <= var <= bNum)];
+  If[! NumericQ[measureValue] || measureValue <= 0,
+   measureValue = Quiet@NIntegrate[
+      If[wp === MachinePrecision,
+       Function[{xx}, Evaluate[weightAdjusted /. var -> xx]],
+       Function[{xx}, Evaluate[N[weightAdjusted /. var -> xx, maxPrec]]]
+       ][xx],
+      {xx, aNum, bNum}, Sequence @@ optsList
+      ];
+   If[! NumericQ[measureValue] || measureValue <= 0,
+    Message[GFPKarlinMcGregor::integral];
+    Return[$Failed]
+    ];
+   ];
+  weightNormalized = Simplify[weightAdjusted/measureValue, Assumptions -> assumptions];
+  maxIndex = Max[i, j];
+  integrandExpr = Simplify[
+    Which[
+      kind === "Discrete", var^nSteps,
+      kind === "Continuous", Exp[-var*time]
+      ]*polyI*polyJ*weightNormalized,
+    Assumptions -> assumptions
+    ];
+  optsList = DeleteDuplicates[optsList];
+  integrandFun = If[wp === MachinePrecision,
+    Function[{xx}, Evaluate[integrandExpr /. var -> xx]],
+    Function[{xx}, Evaluate[N[integrandExpr /. var -> xx, maxPrec]]]
+    ];
+   symbolic = Quiet@Integrate[integrandExpr, {var, aNum, bNum},
+       Assumptions -> (assumptions && Element[var, Reals] && aNum <= var <= bNum)];
+   integralValue = If[NumericQ[symbolic],
+     Chop[N[symbolic, maxPrec], chopTol],
+     Quiet@NIntegrate[integrandFun[xx], {xx, aNum, bNum}, Sequence @@ optsList]
+     ];
+   If[! NumericQ[integralValue],
+    Message[GFPKarlinMcGregor::integral];
+    Return[$Failed]
+    ];
+   integralValue = Chop[integralValue, chopTol];
+  normValues = Table[
+    With[{poly = GFPPolynomial[family, k]},
+     normIntegrand = Simplify[poly^2*weightNormalized, Assumptions -> assumptions];
+     Module[{symb = Quiet@Integrate[normIntegrand, {var, aNum, bNum},
+           Assumptions -> (assumptions && Element[var, Reals] && aNum <= var <= bNum)],
+       normFun, normValLocal},
+      normFun = If[wp === MachinePrecision,
+        Function[{xx}, Evaluate[normIntegrand /. var -> xx]],
+        Function[{xx}, Evaluate[N[normIntegrand /. var -> xx, maxPrec]]]
+        ];
+      normValLocal = If[NumericQ[symb],
+        Chop[N[symb, maxPrec], chopTol],
+        Quiet@NIntegrate[normFun[xx], {xx, aNum, bNum}, Sequence @@ optsList]
+        ];
+      If[! NumericQ[normValLocal], $Failed, Chop[normValLocal, chopTol]]
+      ]
+     ],
+    {k, 0, maxIndex}
+    ];
+  If[MemberQ[normValues, $Failed, Infinity],
+   Message[GFPKarlinMcGregor::norm, i, j];
+   Return[$Failed]
+   ];
+  normI = normValues[[i + 1]];
+  normJ = normValues[[j + 1]];
+   If[! (NumericQ[normI] && NumericQ[normJ] && normI > 0 && normJ > 0),
+    Message[GFPKarlinMcGregor::norm, i, j];
+    Return[$Failed]
+    ];
+   maxIndex = Max[i, j];
+   Switch[kind,
+    "Discrete",
+    discreteData = Lookup[params, "DiscreteTime", <||>];
+    If[discreteData === <||>, Message[GFPKarlinMcGregor::nodata, kind]; Return[$Failed]];
+    ratio = Simplify[discreteData["p"]/discreteData["q"], Assumptions -> assumptions];
+    If[! FreeQ[ratio, Indeterminate] && ratio === Indeterminate,
+     Message[GFPKarlinMcGregor::zeroratio]; Return[$Failed]
+     ];
+    piList = Table[0, {maxIndex + 1}];
+    piList[[1]] = 1;
+    Do[piList[[k + 1]] = Simplify[piList[[k]]*ratio, Assumptions -> assumptions], {k, 1, maxIndex}];
+    prefactorSymbolic = piList[[j + 1]];
+    ,
+    "Continuous",
+    continuousData = Lookup[params, "ContinuousTime", <||>];
+    If[continuousData === <||>, Message[GFPKarlinMcGregor::nodata, kind]; Return[$Failed]];
+    ratio = Simplify[continuousData["lambda"]/continuousData["mu"], Assumptions -> assumptions];
+    If[! FreeQ[ratio, Indeterminate] && ratio === Indeterminate,
+     Message[GFPKarlinMcGregor::zeroratio]; Return[$Failed]
+     ];
+    piList = Table[0, {maxIndex + 1}];
+    piList[[1]] = 1;
+    Do[piList[[k + 1]] = Simplify[piList[[k]]*ratio, Assumptions -> assumptions], {k, 1, maxIndex}];
+    prefactorSymbolic = piList[[j + 1]];
+    ];
+   prefactorNumeric = Chop[N[prefactorSymbolic, maxPrec], chopTol];
+   If[! NumericQ[prefactorNumeric],
+    Message[GFPKarlinMcGregor::zeroratio];
+    Return[$Failed]
+    ];
+   specAssoc = <|
+     "Type" -> kind,
+     "From" -> i,
+     "To" -> j
+     |>;
+   If[kind === "Discrete", specAssoc = Append[specAssoc, "Steps" -> nSteps], specAssoc = Append[specAssoc, "Time" -> time]];
+   result = <|
+     "Specification" -> specAssoc,
+     "WeightSource" -> weightSource,
+     "Interval" -> {aNum, bNum},
+     "IntegralValue" -> integralValue,
+     "Prefactor" -> prefactorSymbolic,
+     "Norms" -> normValues,
+     "Probability" -> Chop[prefactorNumeric*integralValue/Sqrt[normI*normJ], chopTol]
+     |>;
+   result
+   ];
 
 GFPBinomialExpansion[family_Association, n_Integer?NonNegative] := Module[
    {

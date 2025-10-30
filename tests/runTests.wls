@@ -133,6 +133,32 @@ Module[{var, family, result},
    result["MaxAbsOffDiagonal"] < 10^-5];
   ];
 
+(* Karlin-McGregor discrete base cases *)
+Module[{var, family, prob00, prob01},
+  var = Symbol["\[FormalX]"];
+  family = CreateGFPFamily[2 var, -1,
+    Type -> "Lucas", LucasP0 -> 1, LucasP1 -> var, Variable -> var];
+  prob00 = GFPKarlinMcGregor[family, {"Discrete", 0, 0, 0},
+     WorkingPrecision -> 40,
+     "IntegrationOptions" -> {MaxRecursion -> 6}];
+  prob01 = GFPKarlinMcGregor[family, {"Discrete", 1, 0, 1},
+     WorkingPrecision -> 40,
+     "IntegrationOptions" -> {MaxRecursion -> 6}];
+  check["Karlin discrete base cases",
+   prob00 =!= $Failed && prob01 =!= $Failed &&
+   Abs[prob00["Probability"] - 1] < 10^-8 &&
+   prob01["Probability"] > 0 && prob01["Probability"] < 1];
+  ];
+
+(* Karlin-McGregor invalid specification handling *)
+Module[{var, family, result},
+  var = Symbol["\[FormalX]"];
+  family = CreateGFPFamily[2 var, -1,
+    Type -> "Lucas", LucasP0 -> 1, LucasP1 -> var, Variable -> var];
+  result = GFPKarlinMcGregor[family, {"Unknown", 1, 0, 0}];
+  check["Karlin invalid spec triggers failure", result === $Failed];
+  ];
+
 passed = Count[results, _?(TrueQ[#["Pass"]] &)];
 failed = Length[results] - passed;
 summary = <|"Total" -> Length[results], "Passed" -> passed, "Failed" -> failed|>;
