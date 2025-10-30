@@ -25,6 +25,12 @@ GFPRandomWalkData::usage =
 GFPBinomialExpansion::usage =
   "GFPBinomialExpansion[family, n] evaluates the generalized Hoggatt coefficient expansion (Lemma 2.6/2.7) for the nth polynomial without using recurrence.";
 
+GFPOrthogonalityCheck::usage =
+  "GFPOrthogonalityCheck[family, nmax, opts] numerically tests orthogonality under Proposition 3.4/Corollary 3.5 using the implied weights.";
+
+GFPRandomWalkModel::usage =
+  "GFPRandomWalkModel[family, opts] constructs truncated transition/ generator matrices together with potential coefficients and ergodicity diagnostics.";
+
 Options[CreateGFPFamily] = {
    Type -> "Fibonacci",
    LucasP0 -> 2,
@@ -36,6 +42,12 @@ Options[CreateGFPFamily] = {
 Options[GFPZeros] = {
    "Method" -> "Automatic",
    WorkingPrecision -> MachinePrecision
+   };
+
+Options[GFPRandomWalkModel] = {
+   "Type" -> "Discrete",
+   "Dimension" -> 6,
+   Assumptions -> True
    };
 
 Begin["`Private`"];
@@ -336,6 +348,142 @@ GFPRandomWalkData[family_Association] := Module[
     "ContinuousTime" -> continuous
     |>
    ];
+
+GFPRandomWalkModel[family_Association, opts : OptionsPattern[]] := Module[
+   {
+    kind = OptionValue["Type"],
+    dim = OptionValue["Dimension"],
+    assumptions = OptionValue[Assumptions],
+    params, discreteData, continuousData, p, q, r, lambda, mu, diag,
+    matrix, ratio, piCoeffs, simp, rowSums, boundaryOutflow,
+    absRatioLess1, absRatioGreaterEqual1, ergodic,
+    resultAssoc
+    },
+   If[! IntegerQ[dim] || dim < 2,
+    Message[GFPRandomWalkModel::baddim, dim];
+    Return[$Failed];
+    ];
+   simp[expr_] := Simplify[expr, Assumptions -> assumptions];
+   params = GFPRandomWalkData[family];
+   discreteData = Lookup[params, "DiscreteTime", <||>];
+   continuousData = Lookup[params, "ContinuousTime", <||>];
+   resultAssoc = Switch[kind,
+     "Discrete",
+     If[discreteData === <||>,
+      Message[GFPRandomWalkModel::nodata, kind];
+      Return[$Failed];
+      ];
+     {p, q, r} = Lookup[discreteData, {"p", "q", "r"}];
+     matrix = ConstantArray[0, {dim, dim}];
+     matrix[[1, 1]] = simp[r];
+     If[dim >= 2, matrix[[1, 2]] = simp[p]];
+     Do[
+      matrix[[i, i - 1]] = simp[q];
+      matrix[[i, i]] = simp[r];
+      If[i < dim, matrix[[i, i + 1]] = simp[p]];
+      ,
+      {i, 2, dim}
+      ];
+     ratio = If[q === 0,
+       Indeterminate,
+       simp[p/q]
+       ];
+     piCoeffs = Table[0, {dim}];
+     piCoeffs[[1]] = 1;
+     If[ratio =!= Indeterminate,
+      Do[
+       piCoeffs[[k]] = simp[piCoeffs[[k - 1]]*ratio],
+       {k, 2, dim}
+       ];
+      ];
+     rowSums = simp /@ Total[matrix, {2}];
+     boundaryOutflow = simp[1 - matrix[[1, 1]] - If[dim >= 2, matrix[[1, 2]], 0]];
+     absRatioLess1 = If[ratio === Indeterminate, Indeterminate,
+       Simplify[Abs[ratio] < 1, Assumptions -> assumptions]
+       ];
+     absRatioGreaterEqual1 = If[ratio === Indeterminate, Indeterminate,
+       Simplify[Abs[ratio] >= 1, Assumptions -> assumptions]
+       ];
+     ergodic = Which[
+       TrueQ[absRatioLess1], True,
+       TrueQ[absRatioGreaterEqual1], False,
+       True, Indeterminate
+       ];
+     <|
+      "Type" -> "Discrete",
+      "Matrix" -> matrix,
+      "RowSums" -> rowSums,
+      "BoundaryOutflow" -> boundaryOutflow,
+      "PotentialRatio" -> ratio,
+      "PotentialCoefficients" -> piCoeffs,
+      "Ergodicity" -> <|
+        "AbsRatioLessThanOne" -> absRatioLess1,
+        "AbsRatioGreaterEqualOne" -> absRatioGreaterEqual1,
+        "Ergodic" -> ergodic
+        |>
+      |>,
+     "Continuous",
+     If[continuousData === <||>,
+      Message[GFPRandomWalkModel::nodata, kind];
+      Return[$Failed];
+      ];
+     {lambda, mu, diag} = Lookup[continuousData, {"lambda", "mu", "Diagonal"}];
+     matrix = ConstantArray[0, {dim, dim}];
+     matrix[[1, 1]] = simp[diag];
+     If[dim >= 2, matrix[[1, 2]] = simp[lambda]];
+     Do[
+      matrix[[i, i - 1]] = simp[mu];
+      matrix[[i, i]] = simp[diag];
+      If[i < dim, matrix[[i, i + 1]] = simp[lambda]];
+      ,
+      {i, 2, dim}
+      ];
+     ratio = If[mu === 0,
+       Indeterminate,
+       simp[lambda/mu]
+       ];
+     piCoeffs = Table[0, {dim}];
+     piCoeffs[[1]] = 1;
+     If[ratio =!= Indeterminate,
+      Do[
+       piCoeffs[[k]] = simp[piCoeffs[[k - 1]]*ratio],
+       {k, 2, dim}
+       ];
+      ];
+     rowSums = simp /@ Total[matrix, {2}];
+     absRatioLess1 = If[ratio === Indeterminate, Indeterminate,
+       Simplify[Abs[ratio] < 1, Assumptions -> assumptions]
+       ];
+     absRatioGreaterEqual1 = If[ratio === Indeterminate, Indeterminate,
+       Simplify[Abs[ratio] >= 1, Assumptions -> assumptions]
+       ];
+     ergodic = Which[
+       TrueQ[absRatioLess1], True,
+       TrueQ[absRatioGreaterEqual1], False,
+       True, Indeterminate
+       ];
+     <|
+      "Type" -> "Continuous",
+      "Generator" -> matrix,
+      "RowSums" -> rowSums,
+      "PotentialRatio" -> ratio,
+      "PotentialCoefficients" -> piCoeffs,
+      "Ergodicity" -> <|
+        "AbsRatioLessThanOne" -> absRatioLess1,
+        "AbsRatioGreaterEqualOne" -> absRatioGreaterEqual1,
+        "Ergodic" -> ergodic
+        |>
+      |>,
+     _,
+     Message[GFPRandomWalkModel::badtype, kind];
+     Return[$Failed]
+     ];
+   resultAssoc
+   ];
+
+GFPRandomWalkModel::badtype = "Unknown model type `1`. Use \"Discrete\" or \"Continuous\".";
+GFPRandomWalkModel::nodata = "No random walk data available for model type `1`.";
+GFPRandomWalkModel::baddim = "Dimension must be an integer greater than 1. Received `1`.";
 
 GFPBinomialExpansion[family_Association, n_Integer?NonNegative] := Module[
    {

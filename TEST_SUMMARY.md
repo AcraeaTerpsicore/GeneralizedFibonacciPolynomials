@@ -7,4 +7,6 @@
 - **Orthogonality weight detection**: Ensured the toolkit extracts the corollary weight $\omega(x)=\sqrt{k-d(x)^2}$ when $d(x)=3x+1$ and $g(x)=-2$ (affine case with $k=8$).
 - **Hoggatt expansion (Fibonacci)**: Confirmed that the closed-form sum reproduces $\mathcal{F}_n(x)$ for $n\leq 8$ when $d(x)=x$, $g(x)=1$.
 - **Hoggatt expansion (Lucas)**: Confirmed that the closed-form sum reproduces $\mathcal{L}_n(x)$ for $n\leq 8$ when $d(x)=2x$, $g(x)=-1$.
-- **Result**: All 7 automated tests passed (exit code 0).
+- **Random-walk diagnostics (discrete)**: Verified truncated matrix row sums, boundary outflow, and non-ergodicity for $d(x)=3x-1$, $g(x)=-1$.
+- **Random-walk diagnostics (continuous)**: Confirmed generator row sums vanish and ergodicity holds for $d(x)=-2x+1$, $g(x)=-2$.
+- **Result**: All 9 automated tests passed (exit code 0).

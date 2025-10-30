@@ -77,6 +77,29 @@ Module[{var, family, ok},
   check["Hoggatt expansion reproduces Lucas-type polynomials", ok];
   ];
 
+(* Random walk matrix diagnostics (discrete) *)
+Module[{var, family, model, rowsOk, boundaryOk, ergodicFlag},
+  var = Symbol["\[FormalX]"];
+  family = CreateGFPFamily[3 var - 1, -1,
+    Type -> "Lucas", LucasP0 -> 2, LucasP1 -> (3 var - 1), Variable -> var];
+  model = GFPRandomWalkModel[family, "Type" -> "Discrete", "Dimension" -> 5];
+  rowsOk = Simplify[model["RowSums"][[2]] == 1];
+  boundaryOk = Simplify[model["BoundaryOutflow"] == 1/3];
+  ergodicFlag = model["Ergodicity", "Ergodic"] === False;
+  check["Discrete random walk diagnostics", rowsOk && boundaryOk && ergodicFlag];
+  ];
+
+(* Random walk generator diagnostics (continuous) *)
+Module[{var, family, model, rowsOk, ergodicFlag},
+  var = Symbol["\[FormalX]"];
+  family = CreateGFPFamily[-2 var + 1, -2,
+    Type -> "Lucas", LucasP0 -> 2, LucasP1 -> (-2 var + 1), Variable -> var];
+  model = GFPRandomWalkModel[family, "Type" -> "Continuous", "Dimension" -> 5];
+  rowsOk = Simplify[model["RowSums"][[3]] == 0];
+  ergodicFlag = model["Ergodicity", "Ergodic"] === True;
+  check["Continuous-time random walk diagnostics", rowsOk && ergodicFlag];
+  ];
+
 passed = Count[results, _?(TrueQ[#["Pass"]] &)];
 failed = Length[results] - passed;
 summary = <|"Total" -> Length[results], "Passed" -> passed, "Failed" -> failed|>;

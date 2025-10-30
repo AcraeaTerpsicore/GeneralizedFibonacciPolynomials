@@ -41,3 +41,6 @@
   $p_n=\dfrac{1}{c}$, $q_n=\dfrac{c-1+h}{c}$, and $r_n=\dfrac{-h}{c}$;
   the continuous-time version with $g(x)=-k/4$ ($k>0$, $c<0$) yields rates
   $\lambda_n=\dfrac{-1}{c}$, $\mu_n=\dfrac{-k}{4 c}$, and diagonal entry $\beta_n=\dfrac{4+k}{4 c}$.
+- **Potential coefficients** (Section 4): setting $\pi_0=1$ and 
+  $\pi_n=\dfrac{p_0 p_1 \cdots p_{n-1}}{q_1 q_2 \cdots q_n}$ for discrete time (or
+  $\pi_n=\dfrac{\lambda_0 \lambda_1 \cdots \lambda_{n-1}}{\mu_1 \mu_2 \cdots \mu_n}$ in continuous time) characterises recurrence/ergodicity, converging when $|p_n/q_n|<1$ (resp. $|\lambda_n/\mu_n|<1$).
