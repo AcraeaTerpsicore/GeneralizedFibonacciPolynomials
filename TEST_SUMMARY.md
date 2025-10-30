@@ -9,4 +9,6 @@
 - **Hoggatt expansion (Lucas)**: Confirmed that the closed-form sum reproduces $\mathcal{L}_n(x)$ for $n\leq 8$ when $d(x)=2x$, $g(x)=-1$.
 - **Random-walk diagnostics (discrete)**: Verified truncated matrix row sums, boundary outflow, and non-ergodicity for $d(x)=3x-1$, $g(x)=-1$.
 - **Random-walk diagnostics (continuous)**: Confirmed generator row sums vanish and ergodicity holds for $d(x)=-2x+1$, $g(x)=-2$.
-- **Result**: All 9 automated tests passed (exit code 0).
+- **Chebyshev quadrature**: Numerically integrated $U_n$/$T_n$ products against $1/\sqrt{1-x^2}$ on $[-1,1]$ and confirmed off-diagonal entries vanish while parity-predicted zeros hold.
+- **Affine quadrature**: Checked that the $d(x)=3x+1$, $g(x)=-2$ family yields zero off-diagonal moments under the corollary weight on the asymmetric interval.
+- **Result**: All 11 automated tests passed (exit code 0).

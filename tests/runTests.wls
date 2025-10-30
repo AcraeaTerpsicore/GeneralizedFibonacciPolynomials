@@ -100,6 +100,39 @@ Module[{var, family, model, rowsOk, ergodicFlag},
   check["Continuous-time random walk diagnostics", rowsOk && ergodicFlag];
   ];
 
+(* Orthogonality verification for Chebyshev family *)
+Module[{var, family, result},
+  var = Symbol["\[FormalX]"];
+  family = CreateGFPFamily[2 var, -1,
+    Type -> "Lucas", LucasP0 -> 1, LucasP1 -> var, Variable -> var];
+  result = GFPOrthogonalityCheck[family, 3,
+    WorkingPrecision -> 40,
+    "Tolerance" -> 10^-8,
+    "IntegrationOptions" -> {MaxRecursion -> 6}];
+  check["Chebyshev orthogonality integrals small",
+   result =!= $Failed &&
+   NumberQ[result["MaxAbsOffDiagonal"]] &&
+   result["MaxAbsOffDiagonal"] < 10^-6 &&
+   result["ParityDiagnostics", "Applies"] === True &&
+   result["ParityDiagnostics", "Mismatches"] === {}];
+  ];
+
+(* Orthogonality verification for affine Fibonacci family *)
+Module[{var, family, result},
+  var = Symbol["\[FormalX]"];
+  family = CreateGFPFamily[3 var + 1, -2,
+    Type -> "Fibonacci", Variable -> var];
+  result = GFPOrthogonalityCheck[family, 2,
+    WorkingPrecision -> 40,
+    "Tolerance" -> 10^-6,
+    "IntegrationOptions" -> {MaxRecursion -> 6}];
+  check["Corollary orthogonality integrals small",
+   result =!= $Failed &&
+   result["FailedPairs"] === {} &&
+   NumberQ[result["MaxAbsOffDiagonal"]] &&
+   result["MaxAbsOffDiagonal"] < 10^-5];
+  ];
+
 passed = Count[results, _?(TrueQ[#["Pass"]] &)];
 failed = Length[results] - passed;
 summary = <|"Total" -> Length[results], "Passed" -> passed, "Failed" -> failed|>;

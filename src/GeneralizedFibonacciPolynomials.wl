@@ -44,6 +44,15 @@ Options[GFPZeros] = {
    WorkingPrecision -> MachinePrecision
    };
 
+Options[GFPOrthogonalityCheck] = {
+   "Weight" -> Automatic,
+   "Pairs" -> Automatic,
+   "IntegrationOptions" -> {},
+   WorkingPrecision -> Automatic,
+   "Tolerance" -> 10^-8,
+   Assumptions -> True
+   };
+
 Options[GFPRandomWalkModel] = {
    "Type" -> "Discrete",
    "Dimension" -> 6,
@@ -237,14 +246,15 @@ parityCheck[expr_, var_] := Module[{odd, even},
 
 identifyCxth[expr_, var_] := Module[{poly, degree, coeffRules, t, c, h},
    If[! PolynomialQ[expr, var], Return[None]];
-   coeffRules = CoefficientRules[expr, var];
+   coeffRules = Association[CoefficientRules[expr, var]];
    degree = Exponent[expr, var];
    Which[
     degree == 0,
     {0, 0, expr},
-    Length[coeffRules] == 2 && KeyExistsQ[coeffRules, {degree}],
-    c = coeffRules[{degree}];
-    h = coeffRules[ConstantArray[0, 0]];
+    KeyExistsQ[coeffRules, {degree}],
+    c = Lookup[coeffRules, Key[{degree}], None];
+    h = Lookup[coeffRules, Key[{0}], 0];
+    If[c === None, Return[None]];
     t = degree;
     {c, t, h},
     True, None
@@ -265,15 +275,15 @@ orthogonalityCorollaryData[family_] := Module[
    If[! FreeQ[gExpr, var], Return[<||>]];
    k = Simplify[-4*gExpr];
    If[k <= 0, Return[<||>]];
-   s1 = Simplify[((Sqrt[k] - h)/c)^(1/t)];
-  s2 = Simplify[((-Sqrt[k] - h)/c)^(1/t)];
+   s1 = Simplify[((-Sqrt[k] - h)/c)^(1/t)];
+   s2 = Simplify[((Sqrt[k] - h)/c)^(1/t)];
    weight = Simplify[Sqrt[k - dExpr^2]*var^(t - 1)];
    <|
     "c" -> c,
     "t" -> t,
     "h" -> h,
     "k" -> k,
-    "Interval" -> {-s1, s2},
+    "Interval" -> {s1, s2},
     "WeightFunction" -> weight
     |>
    ];
@@ -484,6 +494,259 @@ GFPRandomWalkModel[family_Association, opts : OptionsPattern[]] := Module[
 GFPRandomWalkModel::badtype = "Unknown model type `1`. Use \"Discrete\" or \"Continuous\".";
 GFPRandomWalkModel::nodata = "No random walk data available for model type `1`.";
 GFPRandomWalkModel::baddim = "Dimension must be an integer greater than 1. Received `1`.";
+
+GFPOrthogonalityCheck[family_Association, nmax_Integer?NonNegative, opts : OptionsPattern[]] := Module[
+   {
+    type = family["Type"],
+    var = family["Variable"],
+    assumptions = OptionValue[Assumptions],
+    wpOption = OptionValue[WorkingPrecision],
+    wpNumeric,
+    tol = OptionValue["Tolerance"],
+    integrationOpts = OptionValue["IntegrationOptions"],
+    orthData = GFPOrthogonalityData[family],
+    weightOption = OptionValue["Weight"],
+    pairsOption = OptionValue["Pairs"],
+    weightInfo, weightExpr, interval, aNum, bNum,
+    pairs, results, matrix, offDiagVals, failedPairs, maxOffDiag,
+    parityApplicable, parityPairs, parityConfirmed, parityMismatches,
+    toNumeric, buildPairs, applyWeight, integratePair, optsList, weightSource
+    },
+   
+   wp = If[wpOption === Automatic, MachinePrecision, wpOption];
+   wpNumeric = If[NumberQ[wp], wp, 16];
+   toNumeric[x_] := Module[{num = If[wp === MachinePrecision, N[x], N[x, Max[16, wpNumeric]]] , imag},
+     If[NumericQ[num],
+      imag = If[Head[num] === Complex, Im[num], 0];
+      If[NumericQ[imag] && Abs[imag] <= 10^(-wp/2),
+       Chop[Re[num], 10^(-wp/2)],
+       $Failed
+       ],
+      $Failed
+      ]
+     ];
+   
+   buildPairs[n_Integer?NonNegative] := Flatten[
+     Table[{i, j}, {i, 0, n}, {j, 0, i}],
+     1];
+   
+   applyWeight[expr_] := Simplify[
+     If[type === "Lucas",
+      1/expr,
+      expr
+      ],
+     Assumptions -> assumptions
+     ];
+   
+   weightInfo = Module[
+     {
+      source = None,
+      weightExprLocal = None,
+      intervalLocal = None,
+      corData, weightCheb, dExpr, gExpr, constG, scale,
+      sols, rootVals
+      },
+     
+     Which[
+      weightOption =!= Automatic,
+      Which[
+       MatchQ[weightOption, {_, {_, _}}],
+       {weightExprLocal, intervalLocal} = weightOption;
+       source = "Provided",
+       AssociationQ[weightOption] && KeyExistsQ[weightOption, "Weight"] && KeyExistsQ[weightOption, "Interval"],
+       weightExprLocal = weightOption["Weight"];
+       intervalLocal = weightOption["Interval"];
+       source = "Provided",
+       True,
+       Message[GFPOrthogonalityCheck::badweightopt, weightOption];
+       Return[$Failed]
+       ],
+      
+      (corData = orthData["CorollaryWeight"]; AssociationQ[corData] && corData =!= <||>),
+      weightExprLocal = corData["WeightFunction"];
+      intervalLocal = corData["Interval"];
+      source = "Corollary",
+      
+      True,
+      weightCheb = orthData["ChebyshevMappingWeight"];
+      If[weightCheb === None,
+       Message[GFPOrthogonalityCheck::noweight];
+       Return[$Failed];
+       ];
+      weightExprLocal = weightCheb;
+      source = "Chebyshev";
+      dExpr = family["dExpression"];
+      gExpr = family["gExpression"];
+      constG = Simplify[gExpr, Assumptions -> assumptions];
+      scale = Simplify[Sqrt[-4 constG], Assumptions -> assumptions];
+      sols = Join[
+        Quiet@NSolve[dExpr == scale, var, WorkingPrecision -> wp],
+        Quiet@NSolve[dExpr == -scale, var, WorkingPrecision -> wp]
+        ];
+      rootVals = DeleteDuplicates[
+        Module[{vals = var /. sols},
+         vals = N[vals, wp];
+         vals = Select[vals, NumericQ[#] && Abs[Im[#]] <= 10^(-wp/2) &];
+         Chop[Re[vals], 10^(-wp/2)]
+         ]
+        ];
+      rootVals = Select[rootVals, NumberQ[#] &];
+      If[Length[rootVals] < 2,
+       Message[GFPOrthogonalityCheck::nointerval];
+       Return[$Failed];
+       ];
+      intervalLocal = {Min[rootVals], Max[rootVals]}
+      ];
+     
+     If[! ListQ[intervalLocal] || Length[intervalLocal] != 2,
+      Message[GFPOrthogonalityCheck::badinterval, intervalLocal];
+      Return[$Failed];
+      ];
+     
+     <|
+      "Weight" -> weightExprLocal,
+      "Interval" -> intervalLocal,
+      "Source" -> source
+      |>
+     ];
+   
+   If[weightInfo === $Failed, Return[$Failed]];
+   weightSource = weightInfo["Source"];
+   weightExpr = Simplify[weightInfo["Weight"], Assumptions -> assumptions];
+   interval = weightInfo["Interval"];
+   {aNum, bNum} = toNumeric /@ interval;
+   If[AnyTrue[{aNum, bNum}, # === $Failed &],
+    Message[GFPOrthogonalityCheck::numericinterval, interval];
+    Return[$Failed];
+    ];
+   If[!(aNum < bNum),
+    {aNum, bNum} = {bNum, aNum};
+    ];
+   
+   weightExpr = applyWeight[weightExpr];
+   
+   pairs = If[pairsOption === Automatic,
+     buildPairs[nmax],
+     If[ListQ[pairsOption] && VectorQ[pairsOption, MatchQ[#, {_Integer, _Integer}] &],
+      pairsOption,
+      Message[GFPOrthogonalityCheck::badpairs, pairsOption];
+      Return[$Failed];
+      ]
+     ];
+   
+   integrationOpts = If[ListQ[integrationOpts], integrationOpts, {integrationOpts}];
+   integrationOpts = DeleteCases[integrationOpts, Null | Sequence[]];
+   
+   integratePair[n_, m_] := Module[
+     {
+      f = GFPPolynomial[family, n],
+      g = GFPPolynomial[family, m],
+      integrandExpr, integrandFun, optsList, xx, value
+      },
+     integrandExpr = Simplify[f*g*weightExpr, Assumptions -> assumptions];
+     xx = Unique["orthVar"];
+     integrandFun = If[wp === MachinePrecision,
+       Function[{xx}, Evaluate[integrandExpr /. var -> xx]],
+       Function[{xx}, Evaluate[N[integrandExpr /. var -> xx, wp]]]
+       ];
+     optsList = integrationOpts;
+     If[wp =!= MachinePrecision && ! AnyTrue[optsList, MatchQ[#, WorkingPrecision -> _] &],
+      AppendTo[optsList, WorkingPrecision -> wp]
+      ];
+     If[! AnyTrue[optsList, MatchQ[#, Exclusions -> _] &],
+      AppendTo[optsList, Exclusions -> {xx == aNum, xx == bNum}]
+      ];
+     value = Quiet@NIntegrate[integrandFun[xx], {xx, aNum, bNum}, Sequence @@ optsList];
+     If[NumericQ[value],
+      Chop[value, 10^(-If[NumberQ[wpNumeric], wpNumeric, 16]/4)],
+      Module[{symbolic, refinedAssumptions},
+       refinedAssumptions = assumptions && Element[var, Reals] && aNum <= var <= bNum;
+       symbolic = Quiet@Integrate[integrandExpr, {var, aNum, bNum}, Assumptions -> refinedAssumptions];
+       If[NumericQ[symbolic],
+        Chop[N[symbolic, If[NumberQ[wpNumeric], Max[16, wpNumeric], 16]], 10^(-If[NumberQ[wpNumeric], wpNumeric, 16]/4)],
+        $Failed]
+       ]
+      ]
+     ];
+   
+   results = Map[
+     Function[{pair},
+       With[{n = pair[[1]], m = pair[[2]], val = integratePair[pair[[1]], pair[[2]]]},
+        <|"n" -> n, "m" -> m, "Integral" -> val|>
+        ]
+       ],
+     pairs
+     ];
+   
+   matrix = ConstantArray[Null, {nmax + 1, nmax + 1}];
+   Do[
+    With[{n = res["n"], m = res["m"], val = res["Integral"]},
+    If[0 <= n <= nmax && 0 <= m <= nmax,
+     matrix[[n + 1, m + 1]] = val;
+      matrix[[m + 1, n + 1]] = val;
+      ];
+     ],
+    {res, results}
+    ];
+   
+   offDiagVals = Select[
+     results,
+     (#["n"] =!= #["m"] && NumberQ[#["Integral"]]) &
+     ];
+   maxOffDiag = If[offDiagVals === {},
+     0,
+     Max[Abs[#["Integral"]] & /@ offDiagVals]
+     ];
+   
+   failedPairs = Select[
+     results,
+     With[{val = #["Integral"], n = #["n"], m = #["m"]},
+       n =!= m && (val === $Failed || Abs[val] > tol)
+       ] &
+     ];
+   
+   parityApplicable = TrueQ[orthData["ParitySymmetry", "Result"]] &&
+     Chop[aNum + bNum, tol] == 0;
+   parityPairs = If[parityApplicable,
+     Select[pairs, OddQ[Total[#]] &],
+     {}
+     ];
+   parityConfirmed = Select[
+     results,
+     MemberQ[parityPairs, {#["n"], #["m"]}] &&
+       NumberQ[#["Integral"]] && Abs[#["Integral"]] <= tol &
+     ];
+   parityMismatches = Select[
+     results,
+     MemberQ[parityPairs, {#["n"], #["m"]}] &&
+       (#["Integral"] === $Failed || Abs[#["Integral"]] > tol) &
+     ];
+   
+   <|
+    "Type" -> type,
+    "WeightSource" -> weightSource,
+    "Weight" -> weightExpr,
+    "Interval" -> {aNum, bNum},
+    "Tolerance" -> tol,
+    "PairsTested" -> results,
+    "IntegralMatrix" -> matrix,
+    "MaxAbsOffDiagonal" -> maxOffDiag,
+    "FailedPairs" -> failedPairs,
+    "ParityDiagnostics" -> <|
+      "Applies" -> parityApplicable,
+      "PredictedPairs" -> parityPairs,
+      "Confirmed" -> parityConfirmed,
+      "Mismatches" -> parityMismatches
+      |>
+    |>
+   ];
+
+GFPOrthogonalityCheck::badweightopt = "Cannot interpret weight specification `1`.";
+GFPOrthogonalityCheck::noweight = "No automatic weight/interval available; supply one with the \"Weight\" option.";
+GFPOrthogonalityCheck::nointerval = "Failed to determine suitable integration interval.";
+GFPOrthogonalityCheck::badinterval = "Invalid integration interval specification `1`.";
+GFPOrthogonalityCheck::numericinterval = "Integration interval `1` could not be converted to numeric endpoints.";
+GFPOrthogonalityCheck::badpairs = "Pair specification `1` must be a list of integer index pairs.";
 
 GFPBinomialExpansion[family_Association, n_Integer?NonNegative] := Module[
    {
