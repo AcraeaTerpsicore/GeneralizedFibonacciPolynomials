@@ -133,6 +133,18 @@ Module[{var, family, result},
    result["MaxAbsOffDiagonal"] < 10^-5];
   ];
 
+(* Known weight catalog coverage *)
+Module[{weights, names, entry, var},
+  weights = GFPKnownWeights[];
+  check["Known weight catalog has entries", Length[weights] >= 8];
+  entry = First[GFPKnownWeights["MorganVoyce"]];
+  var = entry["Variable"];
+  check["Morgan-Voyce weight matches expectation",
+   Simplify[entry["Weight"] == Sqrt[4 - (var + 2)^2],
+     Assumptions -> Element[var, Reals]] &&
+   Simplify[entry["Interval"] == {-4, 0}]];
+  ];
+
 (* Karlin-McGregor discrete base cases *)
 Module[{var, family, prob00, prob01},
   var = Symbol["\[FormalX]"];

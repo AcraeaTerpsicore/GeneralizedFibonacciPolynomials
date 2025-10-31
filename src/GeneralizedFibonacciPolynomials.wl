@@ -66,6 +66,59 @@ Options[GFPKarlinMcGregor] = {
    Assumptions -> True
    };
 
+Options[GFPKnownWeights] = {};
+
+knownWeightSpecifications = {
+   <|
+     "Name" -> "ChebyshevT",
+     "Description" -> "Chebyshev polynomial of the first kind (Lucas-type)",
+     "Creator" -> Function[{var},
+       CreateGFPFamily[2 var, -1, Type -> "Lucas", LucasP0 -> 1,
+        LucasP1 -> var, Variable -> var]]
+     |>,
+   <|
+     "Name" -> "ChebyshevU",
+     "Description" -> "Chebyshev polynomial of the second kind (Fibonacci-type)",
+     "Creator" -> Function[{var}, CreateGFPFamily[2 var, -1, Variable -> var]]
+     |>,
+   <|
+     "Name" -> "Fermat",
+     "Description" -> "Fermat polynomials (Fibonacci-type)",
+     "Creator" -> Function[{var}, CreateGFPFamily[3 var, -2, Variable -> var]]
+     |>,
+   <|
+     "Name" -> "FermatLucas",
+     "Description" -> "Fermat-Lucas polynomials (Lucas-type)",
+     "Creator" -> Function[{var},
+       CreateGFPFamily[3 var, -2, Type -> "Lucas", LucasP0 -> 2,
+        LucasP1 -> 3 var, Variable -> var]]
+     |>,
+   <|
+     "Name" -> "MorganVoyce",
+     "Description" -> "Morgan–Voyce polynomials (Fibonacci-type)",
+     "Creator" -> Function[{var}, CreateGFPFamily[var + 2, -1, Variable -> var]]
+     |>,
+  <|
+     "Name" -> "MorganVoyceLucas",
+     "Description" -> "Morgan–Voyce polynomials (Lucas-type)",
+     "Creator" -> Function[{var},
+       CreateGFPFamily[var + 2, -1, Type -> "Lucas", LucasP0 -> 2,
+        LucasP1 -> var + 2, Variable -> var]]
+     |>,
+   <|
+     "Name" -> "Vieta",
+     "Description" -> "Vieta polynomials (Fibonacci-type)",
+     "Creator" -> Function[{var}, CreateGFPFamily[var, -1, Variable -> var]]
+     |>,
+   <|
+     "Name" -> "VietaLucas",
+     "Description" -> "Vieta-Lucas polynomials (Lucas-type)",
+     "Creator" -> Function[{var},
+       CreateGFPFamily[var, -1, Type -> "Lucas", LucasP0 -> 2,
+        LucasP1 -> var, Variable -> var]]
+     |>
+   };
+
 Begin["`Private`"];
 
 clearContextSymbol[sym_Symbol] := (ClearAll[sym]; Clear[sym]);
@@ -763,6 +816,10 @@ GFPOrthogonalityCheck::badinterval = "Invalid integration interval specification
 GFPOrthogonalityCheck::numericinterval = "Integration interval `1` could not be converted to numeric endpoints.";
 GFPOrthogonalityCheck::badpairs = "Pair specification `1` must be a list of integer index pairs.";
 
+GFPKnownWeights::usage =
+  "GFPKnownWeights[] returns associations containing the weight/interval data for familiar GFP families discussed in the reference paper. \
+GFPKnownWeights[name] filters by a specific family name or list of names.";
+
 parseKarlinSpec[spec_] := Module[{kind, data, n, t, i, j},
    Which[
     AssociationQ[spec],
@@ -1037,7 +1094,45 @@ GFPKarlinMcGregor[family_Association, spec_, opts : OptionsPattern[]] := Module[
      "Norms" -> normValues,
      "Probability" -> Chop[prefactorNumeric*integralValue/Sqrt[normI*normJ], chopTol]
      |>;
-   result
+  result
+  ];
+
+GFPKnownWeights[names_: All] := Module[
+   {
+    filterFunc,
+    entries
+    },
+   filterFunc = Which[
+     names === All, True &,
+     StringQ[names], Function[entry, entry["Name"] === names],
+     ListQ[names], Function[entry, MemberQ[names, entry["Name"]]],
+     True, Function[entry, entry["Name"] === names]
+     ];
+   entries = DeleteCases[
+     Table[
+       Module[{var = Unique["formal"], family, info},
+        family = spec["Creator"][var];
+        info = resolveWeightData[family, Automatic, family["Variable"], True, 40];
+        If[FailureQ[info],
+         None,
+         <|
+           "Name" -> spec["Name"],
+           "Description" -> Lookup[spec, "Description", ""],
+           "Type" -> family["Type"],
+           "Variable" -> family["Variable"],
+           "dExpression" -> family["dExpression"],
+           "gExpression" -> family["gExpression"],
+           "Weight" -> Simplify[info["Weight"], Assumptions -> True],
+           "Interval" -> Simplify[info["Interval"], Assumptions -> True],
+           "WeightSource" -> info["Source"]
+           |>
+         ]
+        ],
+       {spec, knownWeightSpecifications}
+       ],
+     None
+     ];
+   Select[entries, filterFunc]
    ];
 
 GFPBinomialExpansion[family_Association, n_Integer?NonNegative] := Module[
